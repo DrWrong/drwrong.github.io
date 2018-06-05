@@ -1,0 +1,5 @@
+@startuml
+
+client->middleMan: TLS Connection
+middleMan-> Server: TLS Connection
+@enduml
