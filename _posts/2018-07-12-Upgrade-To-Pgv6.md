@@ -132,7 +132,69 @@ GO的ORM也有很多，之所以重点考量`Beego ORM` 和 `XORM`是因为以�
 # 附录
 
 ## 关于SqlBuilder
+个人比较倾向于写SqlBuilder的方式来生成sql，而不是裸写sql， SqlBuilder的优点有：
+
++ 代码美观整洁，换行，对齐比较方便
++ 可以利用到语言本身的高亮
++ 减少了一些拼写上的错误
++ 可读性上更优一些
+
+但是不可避免的SqlBuilder会存在一些性能上的损耗
+
+## PGV6里面的奇葩占位符
+
+PGV6的占位符比较奇葩， 不紧能占位参数，而且能占位SQL中任意的一部分, EG:
+
+```golang
+func (o *userTotalPrivilegeOperator) SelectPrivilegsNotExpiredByTypes(
+	privilegeTypes []string,
+	columns ...string,
+) ([]*domain.UserTotalPrivilege, error) {
+	log.Debug("Get privielge types uid %s %+v", o.UserID, privilegeTypes)
+
+	var records []*domain.UserTotalPrivilege
+	sql := "SELECT ? FROM ?shard.user_total_privileges WHERE user_id = ? AND status = 'default' AND privilege_type IN (?) AND end_time > ?"
+	selectFields := pg.Q("*")
+	if len(columns) > 0 {
+		fields := make([]types.ValueAppender, len(columns))
+		for i, column := range columns {
+			fields[i] = pg.F(column)
+		}
+		selectFields = pg.In(fields)
+	}
+
+	ormer := o.getOrmer()
+
+	_, err := ormer.Query(&records, sql,
+		selectFields,
+		o.UserID,
+		pg.In(privilegeTypes),
+		time.Now().UTC(),
+	)
+
+	for _, record := range records {
+		record.AfterSelect(ormer)
+	}
+	// err := o.getOrmer().Model(&records).
+	//	Where("user_id = ?", o.UserID).
+	//	Where("status = ?", "default").
+	//	Where("privilege_type IN (?)", pg.In(privilegeTypes)).
+	//	Where("end_time > ?", time.Now().UTC()).
+	//	Column(columns...).Select()
+	if err != nil {
+		log.Err("Query database error %+v", err)
+	}
+
+	return records, err
+}
+
+```
+
 
 ## 关于Circuit Breaker
 
-## PGV6里面的奇葩占位符
+1. PGV6自带了Circuit Breaker机制
+2. 个人并不认为Circuit Breaker有多大的做用
+> 1. 应用层的错误不应该熔断
+> 2. DB响应慢了的时候连接池本身就起到了限流的做用
+> 3. 网络错误时熔断反而提高了故障恢复的时间
